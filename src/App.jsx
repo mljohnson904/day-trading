@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState}from'react';
 import ReactDOM from'react-dom/client';
 import'./index.css';
+import'./importDashboard.css';
 import{normState,save}from'./core.js';
 import{RulesPanel,ProDashboard,ProEntry,Roadmap,ProAnalytics,ChartStudio}from'./rileyPro.jsx';
 import{TradeImport,AccountDashboard}from'./importDashboard.jsx';
