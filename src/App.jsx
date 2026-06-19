@@ -9,7 +9,19 @@ const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:
 const defaultState={trades:[],reviews:{},settings:{startingBalance:150,maxDailyLoss:50,maxTrades:3,minRuleScore:80,defaultInstrument:'MES',windowStart:'09:30',windowEnd:'11:00'}};
 const ruleLabels=['Inside approved trading window','Aligned with 5M/15M bias','Price aligned with 100 EMA','Entry came from marked zone','1M confirmation present','Stop defined before entry','ATM/bracket confirmed','Risk/reward at least 1:2','No FOMO/revenge trade','Daily loss limit respected'];
 
-function load(){try{return {...defaultState,...JSON.parse(localStorage.getItem(KEY)||'{}')}}catch{return defaultState}}
+function parseTradeDateTime(rawDate,rawTime=''){
+  const combined=`${rawDate??''} ${rawTime??''}`.trim();
+  const usDates=[...combined.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)];
+  const isoDates=[...combined.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)];
+  let date='';
+  if(usDates.length){const m=usDates[usDates.length-1];date=`${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`}
+  else if(isoDates.length){const m=isoDates[isoDates.length-1];date=`${m[1]}-${m[2]}-${m[3]}`}
+  const times=[...combined.matchAll(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\b/gi)];
+  let time='';
+  if(times.length){const m=times[times.length-1];let h=Number(m[1]);const suffix=(m[4]||'').toUpperCase();if(suffix==='PM'&&h<12)h+=12;if(suffix==='AM'&&h===12)h=0;time=`${String(h).padStart(2,'0')}:${m[2]}${m[3]?`:${m[3]}`:''}`}
+  return{date:date||today(),time};
+}
+function load(){try{const state={...defaultState,...JSON.parse(localStorage.getItem(KEY)||'{}')};state.trades=(state.trades||[]).map(t=>{const fixed=parseTradeDateTime(t.date,t.time);return{...t,date:fixed.date,time:fixed.time||t.time||''}});localStorage.setItem(KEY,JSON.stringify(state));return state}catch{return defaultState}}
 function saveState(state){localStorage.setItem(KEY,JSON.stringify(state))}
 function csvValue(row,names){const key=Object.keys(row).find(k=>names.some(n=>k.toLowerCase().includes(n)));return key?row[key]:''}
 function numberValue(v){const s=String(v??'').replace(/[$,]/g,'').trim();if(/^\(.*\)$/.test(s))return-Number(s.slice(1,-1));return Number(s)||0}
@@ -29,7 +41,7 @@ function App(){
 
   const addTrade=()=>{if(!form.date||form.pnl===''){setMessage('Add a date and net P&L before saving.');return}const trade={...form,id:crypto.randomUUID(),contracts:Number(form.contracts)||1,entry:numberValue(form.entry),exit:numberValue(form.exit),pnl:numberValue(form.pnl),score:rules.filter(Boolean).length*10,rules};updateData({...data,trades:[...data.trades,trade]});setMode(form.accountType);setForm({...form,time:new Date().toTimeString().slice(0,5),entry:'',exit:'',pnl:'',notes:'',mistake:'None'});setRules(Array(10).fill(false));setMessage(`${trade.accountType} trade saved.`);setTab('dashboard')};
 
-  const importCsv=(file,accountType)=>{if(!file){setMessage('Choose a CSV file first.');return}Papa.parse(file,{header:true,skipEmptyLines:true,complete:({data:rows,errors})=>{if(errors?.length){setMessage(`CSV read with ${errors.length} warning(s).`)}const imported=rows.filter(row=>Object.values(row).some(v=>String(v??'').trim()!=='')).map(row=>{let date=csvValue(row,['close date','date']);const parsed=new Date(date);if(!Number.isNaN(parsed.getTime()))date=parsed.toISOString().slice(0,10);const side=csvValue(row,['direction','side','action']);return{id:crypto.randomUUID(),accountType,date:date||today(),time:csvValue(row,['time'])||'',instrument:csvValue(row,['instrument','symbol'])||data.settings.defaultInstrument,direction:/sell|short/i.test(side)?'Short':'Long',contracts:numberValue(csvValue(row,['quantity','qty','contracts']))||1,entry:numberValue(csvValue(row,['entry'])),exit:numberValue(csvValue(row,['exit'])),pnl:numberValue(csvValue(row,['net pnl','net p&l','pnl','p&l','profit'])),setup:'Imported',emotion:'Not recorded',mistake:'None',notes:`Imported from NinjaTrader CSV as ${accountType}`,score:0,rules:Array(10).fill(false)}});if(!imported.length){setMessage('No trade rows were found in that CSV.');return}updateData({...data,trades:[...data.trades,...imported]});setMode(accountType);setMessage(`Imported ${imported.length} ${accountType} trades.`);setTab('dashboard')},error:err=>setMessage(err.message)})};
+  const importCsv=(file,accountType)=>{if(!file){setMessage('Choose a CSV file first.');return}Papa.parse(file,{header:true,skipEmptyLines:true,complete:({data:rows,errors})=>{if(errors?.length){setMessage(`CSV read with ${errors.length} warning(s).`)}const imported=rows.filter(row=>Object.values(row).some(v=>String(v??'').trim()!=='')).map(row=>{const rawDate=csvValue(row,['close date','entry time','exit time','date']);const rawTime=csvValue(row,['time']);const parsedDateTime=parseTradeDateTime(rawDate,rawTime);const side=csvValue(row,['direction','side','action']);return{id:crypto.randomUUID(),accountType,date:parsedDateTime.date,time:parsedDateTime.time,instrument:csvValue(row,['instrument','symbol'])||data.settings.defaultInstrument,direction:/sell|short/i.test(side)?'Short':'Long',contracts:numberValue(csvValue(row,['quantity','qty','contracts']))||1,entry:numberValue(csvValue(row,['entry'])),exit:numberValue(csvValue(row,['exit'])),pnl:numberValue(csvValue(row,['net pnl','net p&l','pnl','p&l','profit'])),setup:'Imported',emotion:'Not recorded',mistake:'None',notes:`Imported from NinjaTrader CSV as ${accountType}`,score:0,rules:Array(10).fill(false)}});if(!imported.length){setMessage('No trade rows were found in that CSV.');return}updateData({...data,trades:[...data.trades,...imported]});setMode(accountType);setMessage(`Imported ${imported.length} ${accountType} trades.`);setTab('dashboard')},error:err=>setMessage(err.message)})};
 
   const deleteTrade=id=>updateData({...data,trades:data.trades.filter(t=>t.id!==id)});
   const reviewKey=`${mode}-${reviewDate}`;
