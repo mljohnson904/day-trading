@@ -31,6 +31,10 @@ Open the local URL shown in the terminal.
 npm run build
 ```
 
+## Vercel deployment
+
+Use Node.js 20.x, `npm install`, `npm run build`, and `dist` as the output directory.
+
 ## Deploy to GitHub Pages
 
 This is a Vite app. For GitHub Pages, add this to `vite.config.js` if deploying to a repo subpath:
